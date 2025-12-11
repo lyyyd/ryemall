@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 const MIN_COMMITS = 1;
-const MAX_COMMITS = 15;
+const MAX_COMMITS = 10;
 const WORK_START_MINUTE = 9 * 60; // 09:00 local time
 const WORK_END_MINUTE = 18 * 60; // 18:00 local time
 const COMMIT_FILE = path.resolve(__dirname, 'commit.md');
