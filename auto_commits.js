@@ -9,43 +9,79 @@ const WORK_START_MINUTE = 9 * 60; // 09:00 local time
 const WORK_END_MINUTE = 18 * 60; // 18:00 local time
 const COMMIT_FILE = path.resolve(__dirname, 'commit.md');
 const DAY_MS = 86400000;
-const MONTH_ARG_PATTERN = /^(\d{4})[-/.](\d{1,2})$/;
+const YEAR_PATTERN = /^(\d{4})$/;
+const MONTH_PATTERN = /^(\d{4})[-/.](\d{1,2})$/;
+const DAY_PATTERN = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/;
+const WEEKDAY_ALLOWED_PATTERN = /^[\s,1-7]+$/;
 
 const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
-const parseTargetMonth = () => {
-  const [, , input] = process.argv;
-  if (!input) {
-    throw new Error('Please provide a month argument, e.g. "node auto_commits.js 2024-10".');
+function parseWeekdaySelection(rawInput) {
+  if (!rawInput) {
+    return new Set([1, 2, 3, 4, 5]);
   }
 
-  const match = input.match(MONTH_ARG_PATTERN);
-  if (!match) {
-    throw new Error('Month argument must follow YYYY-MM (or YYYY/MM, YYYY.MM) format.');
+  if (!WEEKDAY_ALLOWED_PATTERN.test(rawInput)) {
+    throw new Error('Weekday argument only accepts digits 1-7 separated by commas or spaces.');
   }
 
-  const year = Number(match[1]);
-  const monthIndex = Number(match[2]) - 1;
-
-  if (monthIndex < 0 || monthIndex > 11) {
-    throw new Error('Month value must be between 1 and 12.');
+  const digits = rawInput.replace(/[^1-7]/g, '');
+  if (!digits) {
+    throw new Error('Weekday argument must include at least one digit between 1 and 7.');
   }
 
-  const startDate = new Date(Date.UTC(year, monthIndex, 1));
-  const endDate = new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59, 999));
+  return new Set([...digits].map((char) => Number(char)));
+}
 
-  return {
-    startDate,
-    endDate,
-    label: `${year}-${String(monthIndex + 1).padStart(2, '0')}`,
-  };
-};
+function parseArgs() {
+  const [, , targetInput, weekdayInput] = process.argv;
+  if (!targetInput) {
+    throw new Error('Please provide a target date, e.g. "2024", "2024-10" or "2024-10-15".');
+  }
 
-const getWorkdays = (startDate, endDate) => {
+  let startDate;
+  let endDate;
+  let label;
+
+  if (DAY_PATTERN.test(targetInput)) {
+    const [, yearStr, monthStr, dayStr] = targetInput.match(DAY_PATTERN);
+    const year = Number(yearStr);
+    const monthIndex = Number(monthStr) - 1;
+    const day = Number(dayStr);
+    startDate = new Date(Date.UTC(year, monthIndex, day));
+    endDate = new Date(Date.UTC(year, monthIndex, day, 23, 59, 59, 999));
+    label = `${year}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  } else if (MONTH_PATTERN.test(targetInput)) {
+    const [, yearStr, monthStr] = targetInput.match(MONTH_PATTERN);
+    const year = Number(yearStr);
+    const monthIndex = Number(monthStr) - 1;
+    if (monthIndex < 0 || monthIndex > 11) {
+      throw new Error('Month value must be between 1 and 12.');
+    }
+    startDate = new Date(Date.UTC(year, monthIndex, 1));
+    endDate = new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59, 999));
+    label = `${year}-${String(monthIndex + 1).padStart(2, '0')}`;
+  } else if (YEAR_PATTERN.test(targetInput)) {
+    const year = Number(targetInput);
+    startDate = new Date(Date.UTC(year, 0, 1));
+    endDate = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
+    label = `${year}`;
+  } else {
+    throw new Error('Target argument must follow YYYY / YYYY-MM / YYYY-MM-DD format.');
+  }
+
+  const weekdays = parseWeekdaySelection(weekdayInput);
+
+  return { startDate, endDate, label, weekdays };
+}
+
+const weekdayFromUtcDay = (utcDay) => (utcDay === 0 ? 7 : utcDay);
+
+const getTargetDays = (startDate, endDate, weekdayFilter) => {
   const days = [];
   for (let current = new Date(startDate); current <= endDate; current = new Date(current.getTime() + DAY_MS)) {
-    const day = current.getUTCDay();
-    if (day === 0 || day === 6) continue;
+    const weekdayId = weekdayFromUtcDay(current.getUTCDay());
+    if (!weekdayFilter.has(weekdayId)) continue;
     days.push(new Date(current));
   }
   return days;
@@ -76,15 +112,16 @@ const appendLog = (timestamp, countLabel) => {
 
 const main = () => {
   ensureCleanTree();
-  const monthInfo = parseTargetMonth();
-  const days = getWorkdays(monthInfo.startDate, monthInfo.endDate);
+  const target = parseArgs();
+  const days = getTargetDays(target.startDate, target.endDate, target.weekdays);
 
   if (!days.length) {
-    console.log(`No weekday found in ${monthInfo.label}. Nothing to do.`);
+    console.log(`No matching weekday found in ${target.label}. Nothing to do.`);
     return;
   }
 
-  console.log(`Generating commits for ${monthInfo.label}: ${days.length} workdays...`);
+  const weekdayList = [...target.weekdays].sort((a, b) => a - b).join(',');
+  console.log(`Generating commits for ${target.label}: ${days.length} days (weekdays ${weekdayList})...`);
 
   days.forEach((day) => {
     const commitTotal = randomInt(MIN_COMMITS, MAX_COMMITS);
