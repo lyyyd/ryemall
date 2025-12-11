@@ -5,6 +5,7 @@ const path = require('path');
 
 const MIN_COMMITS = 1;
 const MAX_COMMITS = 10;
+const DEFAULT_SKIP_PROB = 0; // 默认概率为0（不跳过）
 const WORK_START_MINUTE = 9 * 60; // 09:00 local time
 const WORK_END_MINUTE = 18 * 60; // 18:00 local time
 const COMMIT_FILE = path.resolve(__dirname, 'commit.md');
@@ -34,7 +35,7 @@ function parseWeekdaySelection(rawInput) {
 }
 
 function parseArgs() {
-  const [, , targetInput, weekdayInput] = process.argv;
+  const [, , targetInput, weekdayInput, skipProbInput] = process.argv;
   if (!targetInput) {
     throw new Error('Please provide a target date, e.g. "2024", "2024-10" or "2024-10-15".');
   }
@@ -72,7 +73,16 @@ function parseArgs() {
 
   const weekdays = parseWeekdaySelection(weekdayInput);
 
-  return { startDate, endDate, label, weekdays };
+  let skipProb = DEFAULT_SKIP_PROB;
+  if (skipProbInput !== undefined) {
+    const prob = Number(skipProbInput);
+    if (isNaN(prob) || prob < 0 || prob > 1) {
+      throw new Error('概率参数必须为0~1之间的小数，例如0.3表示30%概率跳过当天。');
+    }
+    skipProb = prob;
+  }
+
+  return { startDate, endDate, label, weekdays, skipProb };
 }
 
 const weekdayFromUtcDay = (utcDay) => (utcDay === 0 ? 7 : utcDay);
@@ -124,6 +134,12 @@ const main = () => {
   console.log(`Generating commits for ${target.label}: ${days.length} days (weekdays ${weekdayList})...`);
 
   days.forEach((day) => {
+    // 概率性跳过当天
+    if (target.skipProb > 0 && Math.random() < target.skipProb) {
+      const dayLabel = day.toISOString().slice(0, 10);
+      console.log(`\n${dayLabel}: skipped (概率跳过)`);
+      return;
+    }
     const commitTotal = randomInt(MIN_COMMITS, MAX_COMMITS);
     const dayLabel = day.toISOString().slice(0, 10);
     console.log(`\n${dayLabel}: ${commitTotal} commits`);
