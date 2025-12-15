@@ -5,7 +5,7 @@ const path = require('path');
 
 const MIN_COMMITS = 1;
 const MAX_COMMITS = 10;
-const DEFAULT_SKIP_PROB = 0.2; // 默认概率为0（不跳过）
+const DEFAULT_SKIP_PROB = 0.25; // 默认概率为0（不跳过）
 const WORK_START_MINUTE = 9 * 60; // 09:00 local time
 const WORK_END_MINUTE = 18 * 60; // 18:00 local time
 const COMMIT_FILE = path.resolve(__dirname, 'commit.md');
